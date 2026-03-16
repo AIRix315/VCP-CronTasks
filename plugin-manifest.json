@@ -1,0 +1,91 @@
+{
+  "manifestVersion": "1.0.0",
+  "name": "CronTaskOrchestrator",
+  "displayName": "周期任务编排器",
+  "version": "1.0.0",
+  "description": "支持 Cron 定时和 Heartbeat 心跳两种模式的周期任务编排插件。可调用任意 VCP 插件、Agent 或 HTTP 端点作为任务执行器，并支持将执行结果记录到日记本。",
+  "author": "VCPToolBox",
+  "pluginType": "hybridservice",
+  "entryPoint": {
+    "type": "nodejs",
+    "script": "index.js"
+  },
+  "communication": {
+    "protocol": "direct",
+    "timeout": 30000
+  },
+  "configSchema": {
+    "CRON_TASK_MAX_CONCURRENT": {
+      "type": "integer",
+      "description": "最大并发任务数",
+      "default": 10
+    },
+    "CRON_TASK_DEFAULT_HEARTBEAT_INTERVAL": {
+      "type": "integer",
+      "description": "默认心跳间隔（毫秒）",
+      "default": 300000
+    },
+    "CRON_TASK_STORAGE_PATH": {
+      "type": "string",
+      "description": "任务存储路径",
+      "default": "./Plugin/CronTaskOrchestrator/tasks"
+    },
+    "CRON_TASK_LOG_DIARY": {
+      "type": "string",
+      "description": "任务日志存储的日记本名称",
+      "default": "任务日志"
+    },
+    "DebugMode": {
+      "type": "boolean",
+      "description": "调试模式",
+      "default": false
+    }
+  },
+  "capabilities": {
+    "systemPromptPlaceholders": [
+      {
+        "placeholder": "{{VCP_CRON_TASK_STATS}}",
+        "description": "当前周期任务统计信息：Cron任务数、Heartbeat任务数、运行中任务数",
+        "isDynamic": true
+      }
+    ],
+    "invocationCommands": [
+      {
+        "commandIdentifier": "CreateCronTask",
+        "description": "创建一个 Cron 定时任务，在指定时间执行指定的工具调用。\n参数:\n- type: 'cron' (固定值)\n- name: 任务名称\n- cronExpression: Cron 表达式 (如 '0 9 * * *')\n- executor: 执行器配置 { type, target, method, payload }\n- diaryName: (可选) 日志存储的日记本名称",
+        "example": "<<<[TOOL_REQUEST]>>>\ntool_name:「始」CronTaskOrchestrator「末」,\ncommand:「始」CreateCronTask「末」,\ntype:「始」cron「末」,\nname:「始」每日报告「末」,\ncronExpression:「始」0 9 * * *「末」,\nexecutor:「始」{\\"type\\":\\"plugin\\",\\"target\\":\\"ReportGenerator\\",\\"method\\":\\"generateDaily\\",\\"payload\\":{}}「末」\n<<<[END_TOOL_REQUEST]>>>"
+      },
+      {
+        "commandIdentifier": "CreateHeartbeatTask",
+        "description": "创建一个 Heartbeat 心跳任务，按间隔检查条件并执行。\n参数:\n- type: 'heartbeat' (固定值)\n- name: 任务名称\n- intervalMs: 间隔毫秒数\n- condition: (可选) 条件配置 { type, query, diaryName }\n- executor: 执行器配置\n- diaryName: (可选) 日志存储的日记本名称",
+        "example": "<<<[TOOL_REQUEST]>>>\ntool_name:「始」CronTaskOrchestrator「末」,\ncommand:「始」CreateHeartbeatTask「末」,\ntype:「始」heartbeat「末」,\nname:「始」监控未读邮件「末」,\nintervalMs:「始」300000「末」,\ncondition:「始」{\\"type\\":\\"diary_query\\",\\"query\\":\\"未读邮件\\",\\"diaryName\\":\\"邮件箱\\"}「末」,\nexecutor:「始」{\\"type\\":\\"plugin\\",\\"target\\":\\"MailChecker\\",\\"method\\":\\"checkUnread\\"}「末」\n<<<[END_TOOL_REQUEST]>>>"
+      },
+      {
+        "commandIdentifier": "ListTasks",
+        "description": "列出所有周期任务及其状态。",
+        "example": "<<<[TOOL_REQUEST]>>>\ntool_name:「始」CronTaskOrchestrator「末」,\ncommand:「始」ListTasks「末」\n<<<[END_TOOL_REQUEST]>>>"
+      },
+      {
+        "commandIdentifier": "PauseTask",
+        "description": "暂停指定任务。\n参数:\n- taskId: 任务ID",
+        "example": "<<<[TOOL_REQUEST]>>>\ntool_name:「始」CronTaskOrchestrator「末」,\ncommand:「始」PauseTask「末」,\ntaskId:「始」task_uuid「末」\n<<<[END_TOOL_REQUEST]>>>"
+      },
+      {
+        "commandIdentifier": "ResumeTask",
+        "description": "恢复指定任务。\n参数:\n- taskId: 任务ID",
+        "example": "<<<[TOOL_REQUEST]>>>\ntool_name:「始」CronTaskOrchestrator「末」,\ncommand:「始」ResumeTask「末」,\ntaskId:「始」task_uuid「末」\n<<<[END_TOOL_REQUEST]>>>"
+      },
+      {
+        "commandIdentifier": "DeleteTask",
+        "description": "删除指定任务。\n参数:\n- taskId: 任务ID",
+        "example": "<<<[TOOL_REQUEST]>>>\ntool_name:「始」CronTaskOrchestrator「末」,\ncommand:「始」DeleteTask「末」,\ntaskId:「始」task_uuid「末」\n<<<[END_TOOL_REQUEST]>>>"
+      },
+      {
+        "commandIdentifier": "RunTaskNow",
+        "description": "立即执行指定任务（手动触发）。\n参数:\n- taskId: 任务ID",
+        "example": "<<<[TOOL_REQUEST]>>>\ntool_name:「始」CronTaskOrchestrator「末」,\ncommand:「始」RunTaskNow「末」,\ntaskId:「始」task_uuid「末」\n<<<[END_TOOL_REQUEST]>>>"
+      }
+    ]
+  },
+  "hasApiRoutes": true
+}

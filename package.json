@@ -1,0 +1,35 @@
+{
+  "name": "vcp-crontasks",
+  "version": "1.0.0",
+  "description": "VCPToolBox periodic task orchestration plugin - Cron and Heartbeat dual-track scheduling",
+  "main": "index.js",
+  "scripts": {
+    "install": "node install.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "vcptoolbox",
+    "plugin",
+    "cron",
+    "scheduler",
+    "task",
+    "heartbeat"
+  ],
+  "author": "AIRix315",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AIRix315/VCP-CronTasks.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AIRix315/VCP-CronTasks/issues"
+  },
+  "homepage": "https://github.com/AIRix315/VCP-CronTasks#readme",
+  "dependencies": {
+    "node-schedule": "^2.1.1",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
