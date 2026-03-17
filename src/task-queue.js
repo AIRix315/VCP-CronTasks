@@ -3,14 +3,20 @@
  * 管理并发任务执行
  */
 class TaskQueue {
-    constructor(maxConcurrent = 10) {
+    constructor(maxConcurrent = 10, retryConfig = {}) {
         this.maxConcurrent = maxConcurrent;
-        this.running = new Map(); // taskId -> { task, startTime }
-        this.queue = []; // 等待队列
-        this.executors = new Map(); // executorType -> executor instance
-        this.onTaskStarted = null; // 回调
-        this.onTaskCompleted = null; // 回调
-        this.onTaskFailed = null; // 回调
+        this.running = new Map();
+        this.queue = [];
+        this.executors = new Map();
+        this.onTaskStarted = null;
+        this.onTaskCompleted = null;
+        this.onTaskFailed = null;
+        
+        this.retryConfig = {
+            enabled: retryConfig.enabled !== false,
+            maxRetries: retryConfig.maxRetries || 3,
+            backoffMs: retryConfig.backoffMs || [30000, 60000, 300000]
+        };
     }
 
     /**
@@ -98,6 +104,69 @@ class TaskQueue {
      * 执行单个任务
      */
     async _executeTask(task) {
+        if (!task.retryState) {
+            task.retryState = {
+                consecutiveErrors: 0,
+                lastError: null,
+                lastErrorAt: null,
+                nextRetryAt: null,
+                totalAttempts: 0,
+                isDisabled: false
+            };
+        }
+        
+        if (task.retryState.isDisabled) {
+            throw new Error(`任务 ${task.id} 已因连续失败被禁用`);
+        }
+
+        const maxAttempts = 1 + (this.retryConfig.enabled ? this.retryConfig.maxRetries : 0);
+        let lastError = null;
+        
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                task.retryState.totalAttempts++;
+                
+                const result = await this._doExecute(task);
+                
+                task.retryState.consecutiveErrors = 0;
+                task.retryState.lastError = null;
+                task.retryState.nextRetryAt = null;
+                
+                return {
+                    ...result,
+                    attempts: attempt,
+                    succeeded: true
+                };
+                
+            } catch (error) {
+                lastError = error;
+                task.retryState.consecutiveErrors++;
+                task.retryState.lastError = error.message;
+                task.retryState.lastErrorAt = new Date().toISOString();
+                
+                if (attempt < maxAttempts) {
+                    const backoffMs = this.retryConfig.backoffMs[attempt - 1] || 
+                                     this.retryConfig.backoffMs[this.retryConfig.backoffMs.length - 1];
+                    
+                    console.warn(
+                        `[TaskQueue] 任务 ${task.id} 第 ${attempt} 次执行失败，` +
+                        `${backoffMs}ms 后重试: ${error.message}`
+                    );
+                    
+                    await this._delay(backoffMs);
+                }
+            }
+        }
+        
+        if (task.retryState.consecutiveErrors >= 5) {
+            task.retryState.isDisabled = true;
+            console.error(`[TaskQueue] 任务 ${task.id} 连续失败 ${task.retryState.consecutiveErrors} 次，已自动禁用`);
+        }
+        
+        throw lastError;
+    }
+
+    async _doExecute(task) {
         const { executor: executorConfig } = task;
         
         if (!executorConfig) {
@@ -111,7 +180,6 @@ class TaskQueue {
             throw new Error(`未找到执行器类型: ${type}`);
         }
 
-        // 执行
         const result = await executor.execute(executorConfig);
         
         return {
@@ -122,10 +190,11 @@ class TaskQueue {
             ...result
         };
     }
+    
+    _delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
 
-    /**
-     * 获取运行中的任务数
-     */
     getRunningCount() {
         return this.running.size;
     }

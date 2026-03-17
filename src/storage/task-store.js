@@ -8,14 +8,20 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 class TaskStore {
-    constructor(storagePath) {
+    constructor(storagePath, limitConfig = {}) {
         this.storagePath = storagePath;
         this.cronDir = path.join(storagePath, 'cron');
         this.heartbeatDir = path.join(storagePath, 'heartbeat');
-        this.tasks = new Map(); // taskId -> taskConfig
+        this.tasks = new Map();
         this.watcher = null;
-        this.onTaskAdded = null; // 回调函数
-        this.onTaskRemoved = null; // 回调函数
+        this.onTaskAdded = null;
+        this.onTaskRemoved = null;
+        
+        this.limitConfig = {
+            globalLimit: limitConfig.globalLimit || 100,
+            perAgentLimit: limitConfig.perAgentLimit || 20,
+            action: limitConfig.action || 'reject'
+        };
     }
 
     /**
@@ -90,6 +96,27 @@ class TaskStore {
      * 保存任务
      */
     async saveTask(task) {
+        if (this.tasks.size >= this.limitConfig.globalLimit) {
+            const msg = `全局任务数限制 (${this.limitConfig.globalLimit}) 已达上限`;
+            if (this.limitConfig.action === 'reject') {
+                throw new Error(msg);
+            } else {
+                console.warn(`[TaskStore] ${msg}，但仍允许创建`);
+            }
+        }
+        
+        if (task.agentId) {
+            const agentCount = this._getAgentTaskCount(task.agentId);
+            if (agentCount >= this.limitConfig.perAgentLimit) {
+                const msg = `Agent "${task.agentId}" 任务数限制 (${this.limitConfig.perAgentLimit}) 已达上限`;
+                if (this.limitConfig.action === 'reject') {
+                    throw new Error(msg);
+                } else {
+                    console.warn(`[TaskStore] ${msg}，但仍允许创建`);
+                }
+            }
+        }
+        
         if (!task.id) {
             task.id = uuidv4();
         }
@@ -222,6 +249,31 @@ class TaskStore {
             this.watcher.close();
             this.watcher = null;
         }
+    }
+    
+    _getAgentTaskCount(agentId) {
+        return Array.from(this.tasks.values())
+            .filter(t => t.agentId === agentId)
+            .length;
+    }
+    
+    getLimitStatus() {
+        const status = {
+            global: {
+                limit: this.limitConfig.globalLimit,
+                current: this.tasks.size,
+                remaining: Math.max(0, this.limitConfig.globalLimit - this.tasks.size)
+            },
+            perAgent: {}
+        };
+        
+        for (const task of this.tasks.values()) {
+            if (task.agentId) {
+                status.perAgent[task.agentId] = (status.perAgent[task.agentId] || 0) + 1;
+            }
+        }
+        
+        return status;
     }
 }
 

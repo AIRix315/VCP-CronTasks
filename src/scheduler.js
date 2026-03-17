@@ -179,12 +179,23 @@ class TaskScheduler {
             const timestamp = new Date().toISOString();
             const fileName = `task_${task.id}_${Date.now()}.md`;
 
+            let retryInfo = '';
+            if (task.retryState && task.retryState.totalAttempts > 1) {
+                retryInfo = `
+
+## 重试信息
+- **尝试次数**: ${task.retryState.totalAttempts}
+- **成功重试**: 是
+- **上次失败**: ${task.retryState.lastError || '无'}
+`;
+            }
+
             const content = `# 任务执行日志
 
 **任务ID**: ${task.id}  
 **任务名称**: ${task.name}  
 **执行时间**: ${timestamp}  
-**执行结果**: ${result.success ? '成功' : '失败'}
+**执行结果**: ${result.success ? '成功' : '失败'}${retryInfo}
 
 ## 执行详情
 

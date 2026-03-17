@@ -28,7 +28,11 @@ function updatePlaceholder() {
         const heartbeatCount = tasks.filter(t => t.type === 'heartbeat').length;
         const runningCount = scheduler ? scheduler.getRunningCount() : 0;
 
-        const placeholderValue = `Cron任务: ${cronCount}个, Heartbeat任务: ${heartbeatCount}个, 运行中: ${runningCount}个`;
+        const limitStatus = taskStore ? taskStore.getLimitStatus() : null;
+        const globalUsage = limitStatus ? 
+            `${limitStatus.global.current}/${limitStatus.global.limit}` : 'N/A';
+
+        const placeholderValue = `Cron任务: ${cronCount}个, Heartbeat任务: ${heartbeatCount}个, 运行中: ${runningCount}个, 全局限额: ${globalUsage}`;
         
         pluginManager.staticPlaceholderValues.set('{{VCP_CRON_TASK_STATS}}', placeholderValue);
 
@@ -52,28 +56,36 @@ async function initialize(initialConfig, dependencies) {
 
         console.log('[CronTaskOrchestrator] 正在初始化...');
 
-        // 获取 PluginManager
-        // 注意：由于循环依赖，我们需要在运行时 require
-        // 假设此插件安装在 VCPToolBox/Plugin/CronTaskOrchestrator/ 目录下
         const PluginModule = require('../../Plugin.js');
         pluginManager = PluginModule;
 
-        // 获取 KnowledgeBaseManager
-        // 优先从依赖注入获取，其次从 global 获取
         knowledgeBaseManager = dependencies?.vectorDBManager || global.knowledgeBaseManager;
 
         if (!knowledgeBaseManager) {
             console.warn('[CronTaskOrchestrator] KnowledgeBaseManager 未找到，日记功能将不可用');
         }
 
-        // 初始化任务存储
+        const retryConfig = {
+            enabled: config.CRON_TASK_RETRY_ENABLED !== 'false',
+            maxRetries: parseInt(config.CRON_TASK_MAX_RETRIES, 10) || 3,
+            backoffMs: (config.CRON_TASK_RETRY_BACKOFF_MS || '30000,60000,300000')
+                .split(',')
+                .map(s => parseInt(s.trim(), 10))
+                .filter(n => !isNaN(n))
+        };
+
+        const limitConfig = {
+            globalLimit: parseInt(config.CRON_TASK_GLOBAL_LIMIT, 10) || 100,
+            perAgentLimit: parseInt(config.CRON_TASK_PER_AGENT_LIMIT, 10) || 20,
+            action: config.CRON_TASK_LIMIT_ACTION || 'reject'
+        };
+
         const storagePath = config.CRON_TASK_STORAGE_PATH || './Plugin/CronTaskOrchestrator/tasks';
-        taskStore = new TaskStore(storagePath);
+        taskStore = new TaskStore(storagePath, limitConfig);
         await taskStore.initialize();
 
-        // 初始化任务队列
         const maxConcurrent = config.CRON_TASK_MAX_CONCURRENT || 10;
-        const taskQueue = new TaskQueue(maxConcurrent);
+        const taskQueue = new TaskQueue(maxConcurrent, retryConfig);
 
         // 设置队列回调
         taskQueue.onTaskStarted = (task) => {
@@ -190,6 +202,7 @@ async function createCronTask(args) {
         executor,
         diaryName,
         condition,
+        agentId: args.agentId || 'default',
         enabled: true,
         status: 'idle',
         createdAt: new Date().toISOString()
@@ -226,6 +239,7 @@ async function createHeartbeatTask(args) {
         executor,
         diaryName,
         condition,
+        agentId: args.agentId || 'default',
         enabled: true,
         status: 'idle',
         createdAt: new Date().toISOString()
